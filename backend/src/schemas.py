@@ -53,3 +53,24 @@ class RevisionInput(Clean):
     borehole_id:int
     version:str=Field(min_length=2,max_length=40)
     note:str=Field(min_length=8,max_length=600)
+class ReceiptBatchInput(Clean):
+    borehole_id:int
+    code:str=Field(min_length=2,max_length=60)
+    sample_ids:list[int]=Field(min_length=2,max_length=8)
+    note:str=Field(default='',max_length=600)
+class ReceiptBagInput(Clean):
+    nominal_sample_id:int
+    code:str=Field(min_length=2,max_length=60)
+    density:float=Field(gt=0,le=5)
+    susceptibility:float=Field(ge=0,le=1000)
+    velocity:float=Field(gt=500,le=9000)
+class ReceiptCheckin(Clean):
+    sample_ids:list[int]=Field(min_length=1,max_length=8)
+class ReceiptPair(Clean):
+    bag_id:int
+    sample_id:int
+class ReceiptVerify(Clean):
+    reason:str=Field(min_length=8,max_length=600)
+    assignment:list[ReceiptPair]=Field(min_length=1,max_length=8)
+class ReceiptIssue(Clean):
+    idempotency_key:str=Field(min_length=8,max_length=100)

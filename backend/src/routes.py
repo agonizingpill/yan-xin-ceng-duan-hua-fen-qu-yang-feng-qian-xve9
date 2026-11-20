@@ -3,14 +3,14 @@ from sqlalchemy import select
 from .database import Session
 from .security import current,allow
 from .common import pack,audit,hole
-from .models import Borehole,CoreRun,Reading,MissingInterval,Interpretation,Stratum,SampleInterval,Seal,Custody,ColumnRevision,Audit
-from .schemas import HoleInput,RunInput,ReadingInput,MissingInput,Reason,BoreholeRef,Layers,SampleInput,SealInput,CustodyInput,RevisionInput
-from . import drilling_service as drilling,strata_service as strata,sample_service as sampling,custody_service as custody,revision_service as revision
+from .models import Borehole,CoreRun,Reading,MissingInterval,Interpretation,Stratum,SampleInterval,Seal,Custody,ColumnRevision,Audit,ReceiptBatch,ReceiptSample,LabReceipt,ReceiptBag
+from .schemas import HoleInput,RunInput,ReadingInput,MissingInput,Reason,BoreholeRef,Layers,SampleInput,SealInput,CustodyInput,RevisionInput,ReceiptBatchInput,ReceiptBagInput,ReceiptCheckin,ReceiptVerify,ReceiptIssue
+from . import drilling_service as drilling,strata_service as strata,sample_service as sampling,custody_service as custody,revision_service as revision,receipt_service as receipt
 router=APIRouter()
 def permissions(u,controlled=False):allow(u,*(['supervisor']if controlled else['operator','supervisor']))
 @router.get('/register')
 def register(u=Depends(current)):
-    with Session()as s:return {name:[pack(x)for x in s.scalars(select(cls).order_by(cls.id))]for name,cls in [('boreholes',Borehole),('runs',CoreRun),('readings',Reading),('missing',MissingInterval),('interpretations',Interpretation),('strata',Stratum),('samples',SampleInterval),('seals',Seal),('custodies',Custody),('revisions',ColumnRevision)]}
+    with Session()as s:return {name:[pack(x)for x in s.scalars(select(cls).order_by(cls.id))]for name,cls in [('boreholes',Borehole),('runs',CoreRun),('readings',Reading),('missing',MissingInterval),('interpretations',Interpretation),('strata',Stratum),('samples',SampleInterval),('seals',Seal),('custodies',Custody),('revisions',ColumnRevision),('receipt_batches',ReceiptBatch),('receipt_samples',ReceiptSample),('receipt_bags',ReceiptBag),('lab_receipts',LabReceipt)]}
 @router.get('/audit')
 def history(u=Depends(current)):
     with Session()as s:return [pack(x)for x in s.scalars(select(Audit).order_by(Audit.id.desc()).limit(35))]
@@ -97,3 +97,28 @@ def new_revision(p:RevisionInput,u=Depends(current)):
 def freeze(id:int,u=Depends(current)):
     permissions(u,True)
     with Session.begin()as s:return revision.freeze(s,id,u)
+# 实验室收样组：整组一次签收、一次配对、一次回执；暂扣或破签时不放行。
+@router.post('/receipt-batches')
+def new_batch(p:ReceiptBatchInput,u=Depends(current)):
+    permissions(u)
+    with Session.begin()as s:return receipt.create(s,p,u)
+@router.post('/receipt-batches/{id}/bags')
+def new_bag(id:int,p:ReceiptBagInput,u=Depends(current)):
+    permissions(u)
+    with Session.begin()as s:return receipt.add_bag(s,id,p,u)
+@router.post('/receipt-batches/{id}/check-in')
+def check_in(id:int,p:ReceiptCheckin,u=Depends(current)):
+    permissions(u)
+    with Session.begin()as s:return receipt.check_in(s,id,p,u)
+@router.post('/receipt-batches/{id}/match')
+def match(id:int,u=Depends(current)):
+    permissions(u)
+    with Session.begin()as s:return receipt.match(s,id,u)
+@router.post('/receipt-batches/{id}/verify')
+def verify(id:int,p:ReceiptVerify,u=Depends(current)):
+    permissions(u,True)
+    with Session.begin()as s:return receipt.verify(s,id,p,u)
+@router.post('/receipt-batches/{id}/receipt')
+def issue_receipt(id:int,p:ReceiptIssue,u=Depends(current)):
+    permissions(u)
+    with Session.begin()as s:return receipt.issue_receipt(s,id,p.idempotency_key,u)
