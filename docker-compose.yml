@@ -1,0 +1,78 @@
+name: ${COMPOSE_PROJECT_NAME:-core-strata}
+x-app: &app
+  build: ./backend
+  environment:
+    DATABASE_URL: postgresql+psycopg://strata:stratapass@db/strata
+    REDIS_URL: redis://redis:6379/0
+    JWT_SECRET: ${JWT_SECRET:-core-strata-demo-change-me}
+    SEED_DEMO: 'true'
+  volumes: [artifacts:/artifacts]
+  depends_on:
+    db: {condition: service_healthy}
+    redis: {condition: service_healthy}
+services:
+  frontend:
+    build: ./frontend
+    container_name: ${COMPOSE_PROJECT_NAME:-core-strata}-frontend
+    ports: ['${FRONTEND_PORT:-18232}:80']
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: ['CMD','wget','-q','-O','/dev/null','http://127.0.0.1/']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  backend:
+    <<: *app
+    container_name: ${COMPOSE_PROJECT_NAME:-core-strata}-backend
+    ports: ['${BACKEND_PORT:-19232}:8000']
+    healthcheck:
+      test: ['CMD','python','-c','import urllib.request;urllib.request.urlopen("http://127.0.0.1:8000/health")']
+      interval: 5s
+      timeout: 4s
+      retries: 30
+  worker:
+    <<: *app
+    container_name: ${COMPOSE_PROJECT_NAME:-core-strata}-worker
+    command: ['python','-m','src.worker']
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: ['CMD','python','-c','import time,pathlib; assert time.time()-float(pathlib.Path("/artifacts/core-heartbeat").read_text())<20']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  db:
+    image: postgres:16-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-core-strata}-db
+    environment:
+      POSTGRES_DB: strata
+      POSTGRES_USER: strata
+      POSTGRES_PASSWORD: stratapass
+    ports: ['${DB_PORT:-17732}:5432']
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL','pg_isready -U strata -d strata -h 127.0.0.1']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-core-strata}-redis
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ['CMD','redis-cli','ping']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+volumes:
+  db-data:
+  redis-data:
+  artifacts:
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${DOCKER_SUBNET:-10.221.33.0/24}
